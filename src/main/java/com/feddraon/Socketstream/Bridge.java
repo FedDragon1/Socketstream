@@ -1,143 +1,119 @@
 package com.feddraon.Socketstream;
 
+import org.opencv.core.Core;
+import org.opencv.core.Mat;
+import org.opencv.core.MatOfByte;
+import org.opencv.core.Size;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.Imgproc;
+import org.opencv.videoio.VideoCapture;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
+import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
 
 
 public class Bridge {
     private static final int N_THREADS = 8;
-    private static final int N_FILES = 8;
+    public static final int N_FILES = 4;
     private static final ExecutorService POOL = Executors.newFixedThreadPool(N_THREADS);
+    private final Logger logger = LoggerFactory.getLogger(Bridge.class);
+    private final String functionPath;
+    private VideoCapture capture;
+    private final Mat image = new Mat();
+    private final Size size = new Size(132, 74);
     private int fileCounter = 0;
-    ArrayList<File> files = new ArrayList<>(N_FILES);
-    ArrayList<PrintStream> streams = new ArrayList<>(N_FILES);
+    private String rtmpURI;
+//    ArrayList<PrintStream> streams = new ArrayList<>(N_FILES);
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
-
-        File inputFile = new File(
-                "C:\\Users\\fedel\\Pictures\\Camera Roll\\Win 10.jpg");
-//        BufferedImage bufferedImage = new BufferedImage(3840, 2400, BufferedImage.TYPE_INT_RGB);
-        BufferedImage bufferedImage = ImageIO.read(inputFile);
-
-        Bridge bridge = new Bridge("C:\\Users\\fedel\\AppData\\Local\\Packages\\Microsoft.MinecraftUWP_8wekyb3d8bbwe\\LocalState\\games\\com.mojang\\minecraftWorlds\\MSX5YkSXAAA=\\behavior_packs\\PyStream\\functions");
+        System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
+        Bridge bridge = new Bridge("C:\\Users\\fedel\\AppData\\Local\\Packages\\Microsoft.MinecraftUWP_8wekyb3d8bbwe\\LocalState\\games\\com.mojang\\minecraftWorlds\\MSX5YkSXAAA=\\behavior_packs\\PyStream\\functions",
+                "rtmp://127.0.0.1:1935/live/test001");
 
         long start = System.nanoTime();
 
-        Future<String> future = bridge.imageToFunction(bufferedImage);
-        Future<String> future1 = bridge.imageToFunction(bufferedImage);
-        Future<String> future2 = bridge.imageToFunction(bufferedImage);
-        Future<String> future3 = bridge.imageToFunction(bufferedImage);
+        Future<String> fut = bridge.produceNextFrame();
 
-        future.get();
-        future1.get();
-        future2.get();
-        future3.get();
-
-        future = bridge.imageToFunction(bufferedImage);
-        future1 = bridge.imageToFunction(bufferedImage);
-        future2 = bridge.imageToFunction(bufferedImage);
-        future3 = bridge.imageToFunction(bufferedImage);
-
-        future.get();
-        future1.get();
-        future2.get();
-        future3.get();
-
-        future = bridge.imageToFunction(bufferedImage);
-        future1 = bridge.imageToFunction(bufferedImage);
-        future2 = bridge.imageToFunction(bufferedImage);
-        future3 = bridge.imageToFunction(bufferedImage);
-
-        future.get();
-        future1.get();
-        future2.get();
-        future3.get();
-
-        future = bridge.imageToFunction(bufferedImage);
-        future1 = bridge.imageToFunction(bufferedImage);
-        future2 = bridge.imageToFunction(bufferedImage);
-        future3 = bridge.imageToFunction(bufferedImage);
-
-        future.get();
-        future1.get();
-        future2.get();
-        future3.get();
+        fut.get();
 
         long end = System.nanoTime();
-        System.out.println("average frame = " + ((end - start) / 1000000000.0 / 16) + " seconds");
+
+        System.out.println((end-start) / 1_000_000_000.0);
+
 
         POOL.shutdown();
     }
 
-    public Bridge(String functionPath) throws FileNotFoundException {
+    public Bridge(String functionPath, String rtmpURI) throws FileNotFoundException {
 
-        for (int i = 0; i < N_FILES; i++) {
-            File file = new File(functionPath + "\\buff_" + i + ".mcfunction");
-            this.files.add(
-                    file
-            );
-            this.streams.add(
-                    new PrintStream(new BufferedOutputStream(new FileOutputStream(file)), true)
-            );
+        this.rtmpURI = rtmpURI;
+
+        this.capture = new VideoCapture(this.rtmpURI);
+
+        this.functionPath = functionPath;
+
+//        for (int i = 0; i < N_FILES; i++) {
+//            File file = new File(functionPath + "\\buff_" + i + ".mcfunction");
+//            this.streams.add(
+//                    new PrintStream(new BufferedOutputStream(new FileOutputStream(file)), true)
+//            );
+//        }
+    }
+
+    public Future<String> produceNextFrame() {
+        this.capture.read(image);
+
+        if (!image.size().equals(size)) {
+            logger.warn("Resizing image, slow render speed expected.");
+            try {
+                Imgproc.resize(image, image, size);
+            } catch (Exception e) {
+                this.capture = new VideoCapture(this.rtmpURI);
+                return produceNextFrame();
+            }
         }
-    }
 
-    public BufferedImage resizeImage(BufferedImage src, int width, int height) throws IOException {
-        BufferedImage resizedImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_BGR);
-        Graphics2D graphics2D = resizedImage.createGraphics();
-        graphics2D.drawImage(src, 0, 0, width, height, null);
-        graphics2D.dispose();
-        return resizedImage;
-    }
+        Imgproc.cvtColor(image, image, Imgproc.COLOR_BGR2RGB);
 
-    public Future<String> imageToFunction(BufferedImage image) throws IOException {
-        BufferedImage newImage = resizeImage(image, 133, 75);
-        Converter converter = new Converter(fileCounter, newImage);
+        Converter converter = new Converter(fileCounter, image.clone());
         fileCounter++;
         fileCounter %= N_FILES;
         return POOL.submit(converter);
     }
 
+    public void setRtmpURI(String rtmpURI) {
+        this.rtmpURI = rtmpURI;
+        this.capture = new VideoCapture(this.rtmpURI);
+    }
+
     class Converter implements Callable<String> {
         private final int name;
-        private final BufferedImage image;
+        private final Mat image;
+        private final byte[] rgb = new byte[3];
 
-        public Converter(int name, BufferedImage image) {
+        public Converter(int name, Mat image) {
             this.name = name;
             this.image = image;
         }
 
-        private int[] hexToArray(int hex) {
-            int r = hex >>> 16 & 0xff;
-            int g = hex >>> 8 & 0xff;
-            int b = hex & 0xff;
-            return new int[] {r, g, b};
-        }
-
         @Override
-        public String call() {
-            long start = System.nanoTime();
+        public String call() throws IOException {
+            PrintStream stream = new PrintStream(new BufferedOutputStream(new FileOutputStream(functionPath + "\\buff_" + name + ".mcfunction")), true);
 
-            PrintStream stream = streams.get(this.name);
-
-            for (int y = 0; y < image.getHeight(); y++) {
-                for (int x = 0; x < image.getWidth(); x++) {
-                    int[] rgb = hexToArray(image.getRGB(x, y));
-                    String command = "setblock 0 " + (34 - y) + " " + x + " " + ColorToBlock.closestMatch(rgb[0], rgb[1], rgb[2]);
+            for (int y = 0; y < 74; y++) {
+                for (int x = 0; x < 132; x++) {
+                    image.get(y, x, rgb);
+                    String command = "setblock 0 " + (33 - y) + " " + x + " " + ColorToBlock.closestMatch(rgb[0], rgb[1], rgb[2]);;
                     stream.println(command);
                 }
             }
-
-            long end = System.nanoTime();
-            System.out.println("call = " + ((end - start) / 1000000000.0) + " seconds");
-
             return "/function buff_" + this.name;
         }
     }
@@ -146,6 +122,7 @@ public class Bridge {
 
 
 class ColorToBlock {
+    private ColorToBlock() {}
 
     public static final LinkedHashMap<Integer[], String> MAP = new LinkedHashMap<>() {
         {
@@ -322,16 +299,6 @@ class ColorToBlock {
 
     public static final List<String> MAP_VALUES = MAP.values().stream().toList();
 
-    public static void main(String[] args) {
-        long start = System.nanoTime();
-        for (int i = 0; i < 10000; i++) {
-            closestMatch(0, 0, 0);
-        }
-        long end = System.nanoTime();
-        System.out.println("closestMatch * 10000 = " + ((end - start) / 1000000000.0) + " seconds");
-
-    }
-
     public static String closestMatch(int r, int g, int b) {
         List<Double> list = MAP.keySet().stream()
                 .mapToDouble(color -> getDifference(color[0], color[1], color[2], r, g, b))
@@ -341,6 +308,9 @@ class ColorToBlock {
     }
 
     public static double getDifference(int r1, int g1, int b1, int r2, int g2, int b2) {
+        r2 &= 0xff;
+        g2 &= 0xff;
+        b2 &= 0xff;
         return Math.sqrt(
                 Math.pow(((r2 - r1) * 0.3), 2) +
                         Math.pow(((g2 - g1) * 0.59), 2) +
