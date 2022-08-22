@@ -2,27 +2,23 @@ package com.feddraon.Socketstream;
 
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfByte;
 import org.opencv.core.Size;
-import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.videoio.VideoCapture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.imageio.ImageIO;
-import java.awt.*;
-import java.awt.image.BufferedImage;
 import java.io.*;
-import java.util.*;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.*;
 
 
 public class Bridge {
     private static final int N_THREADS = 8;
-    public static final int N_FILES = 4;
-    private static final ExecutorService POOL = Executors.newFixedThreadPool(N_THREADS);
+    public static final int N_FILES = 3;
+    public static final ExecutorService POOL = Executors.newFixedThreadPool(N_THREADS);
     private final Logger logger = LoggerFactory.getLogger(Bridge.class);
     private final String functionPath;
     private VideoCapture capture;
@@ -30,7 +26,6 @@ public class Bridge {
     private final Size size = new Size(132, 74);
     private int fileCounter = 0;
     private String rtmpURI;
-//    ArrayList<PrintStream> streams = new ArrayList<>(N_FILES);
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
@@ -41,11 +36,20 @@ public class Bridge {
 
         Future<String> fut = bridge.produceNextFrame();
 
+        //Thread.sleep(100);
+
+        Future<String> fut2 = bridge.produceNextFrame();
+
         fut.get();
+
+        //Thread.sleep(100);
+
+        fut2.get();
+
 
         long end = System.nanoTime();
 
-        System.out.println((end-start) / 1_000_000_000.0);
+        System.out.println((end-start) / 1_000_000_000.0 / 2);
 
 
         POOL.shutdown();
@@ -58,13 +62,10 @@ public class Bridge {
         this.capture = new VideoCapture(this.rtmpURI);
 
         this.functionPath = functionPath;
+    }
 
-//        for (int i = 0; i < N_FILES; i++) {
-//            File file = new File(functionPath + "\\buff_" + i + ".mcfunction");
-//            this.streams.add(
-//                    new PrintStream(new BufferedOutputStream(new FileOutputStream(file)), true)
-//            );
-//        }
+    public void idle() {
+        this.capture.read(image);
     }
 
     public Future<String> produceNextFrame() {

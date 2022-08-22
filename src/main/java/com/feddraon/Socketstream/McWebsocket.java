@@ -26,7 +26,7 @@ public class McWebsocket {
     private final JsonParser parser = JsonParserFactory.getJsonParser();
     private final Logger logger = LoggerFactory.getLogger(McWebsocket.class);
     private boolean playingStream = false;
-    private final Bridge bridge = new Bridge("C:\\Users\\fedel\\AppData\\Local\\Packages\\Microsoft.MinecraftUWP_8wekyb3d8bbwe\\LocalState\\games\\com.mojang\\minecraftWorlds\\MSX5YkSXAAA=\\behavior_packs\\PyStream\\functions",
+    private final Bridge bridge = new Bridge("C:\\Users\\fedel\\AppData\\Local\\Packages\\Microsoft.MinecraftUWP_8wekyb3d8bbwe\\LocalState\\games\\com.mojang\\minecraftWorlds\\KlgBY-NXAAA=\\behavior_packs\\PyStream\\functions",
             "rtmp://127.0.0.1:1935/live/test001");
 
     public McWebsocket() throws FileNotFoundException {
@@ -42,12 +42,11 @@ public class McWebsocket {
     @OnClose
     public void OnClose() {
         logger.info("连接已退出");
+        this.renew(false);
     }
 
     @OnMessage
-    public void OnMessage(String message) throws IOException {
-        logger.info("接收信息：" + message);
-
+    public void OnMessage(String message) {
         Map<String, Object> map = parser.parseMap(message);
         Map<String, Object> body = (LinkedHashMap<String, Object>)map.get("body");
         if (body.containsKey("sender") && !(body.get("sender")).equals("外部")) {
@@ -55,7 +54,7 @@ public class McWebsocket {
             if (arguments[0].equals("stream")) {
                 if (arguments.length != 1) {
                     if (arguments[1].equals("end")) {
-                        renew();
+                        renew(true);
                         return;
                     }
                     bridge.setRtmpURI(arguments[1]);
@@ -83,24 +82,29 @@ public class McWebsocket {
     }
 
     private void tick() throws InterruptedException, ExecutionException {
-        long startTime = System.currentTimeMillis();
-
         if (playingStream) {
+            long startTime = System.currentTimeMillis();
             functionQueue.add(bridge.produceNextFrame());
             dispatch();
+            long endTime = System.currentTimeMillis();
+            Thread.sleep(Math.max(90 - endTime + startTime, 0));
+        } else {
+            bridge.idle();
+            Thread.sleep(50);
         }
-
-        long endTime = System.currentTimeMillis();
-        Thread.sleep(Math.max(100 - endTime + startTime, 0));
     }
 
-    private void renew() {
+    private void renew(boolean sendFill) {
         playingStream = false;
         frameCount = BUFF_FRAME;
+        functionQueue.forEach(fut -> fut.cancel(true));
         functionQueue.clear();
         try {
-            session.getBasicRemote().sendText("/fill 0 -40 0 0 33 131 concrete 15");
-        } catch (IOException e) {
+            Thread.sleep(200);
+            if (sendFill) {
+                session.getBasicRemote().sendText("/fill 0 -40 0 0 33 131 concrete 15");
+            }
+        } catch (IOException | InterruptedException e) {
             e.printStackTrace();
         }
     }
